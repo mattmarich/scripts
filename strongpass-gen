@@ -1,0 +1,8 @@
+#!/bin/bash
+echo -e "Five Strong Passwords:\n"
+< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-16};echo;
+< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-16};echo;
+< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-16};echo;
+< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-16};echo;
+< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-16};echo;
+echo ""

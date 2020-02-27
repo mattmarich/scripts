@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Check if cpulimit is installed, if not then install it on debian based system
+isInstalled=`which cpulimit | wc -l`
+if [ $isInstalled -ne 1 ]
+then
+  apt-get update && apt-get install -y cpulimit
+fi
+
+# Set cpu preferences and limit a specific process is it's over it's limits
+cpuUsage=5000 # This is percentage of cpu usage so in this case, checking for greater than or equal to 6 processors being used
+desiredCPUCap=4400 # This is the limit you would like to place, again in cpu percentage, highest value is approximately 4 1/2 processors
+processName="<process_name_here>"
+processDetails=`ps aux | grep $processName | grep -v grep | awk {'print $2,$3'}`
+processPID=`echo $processDetails | cut -d ' ' -f 1`
+processCPU=`echo $processDetails | cut -d ' ' -f 2 | cut -d '.' -f 1` # Return integer value
+# Set limit if above our specified threshold
+if [ $processCPU -ge $cpuUsage ]
+then
+  cpulimit --pid $processPID --limit $desiredCPUCap
+fi
+
+exit 0

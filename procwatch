@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# J. Laws (11/20/2015)
+# Updated 7/21/2016 - Added more dating
+#
+# Outputs internal system monitoring information at cron interval to file for analysis
+# Cleans up after itself, only retaining configured days of logging
+#
+
+DATE=$(date +%F)
+TSTAMP=$(date "+%F %T")
+LOGFOLDER=/var/log/procwatch
+DAYS2LOG=7
+TOP=$(which top 2> /dev/null)
+PS=$(which ps 2> /dev/null)
+NSTAT=$(which netstat 2> /dev/null)
+UTIME=$(which uptime 2> /dev/null)
+FIND=$(which find 2> /dev/null)
+
+if [[ ! -d ${LOGFOLDER} ]]
+then
+	echo "Logfolder does not yet exist, creating..."
+	mkdir -p /var/log/procwatch
+else
+	if [[ -f ${FIND} ]]
+	then
+		find ${LOGFOLDER} -type f -name '*.log' -ctime ${DAYS2LOG} -delete
+	else
+		echo "The path for 'find' does not exist, please install it so we can clear up old log files"
+	fi
+fi
+
+# Top check of one iteration
+if [[ -f ${TOP} ]]
+then
+	echo "" >> ${LOGFOLDER}/top-${DATE}.log
+	echo "${TSTAMP}" >> ${LOGFOLDER}/top-${DATE}.log
+	COLUMNS=2048 ${TOP} -n1 -b1 -c >> ${LOGFOLDER}/top-${DATE}.log
+else
+	echo "$(date +%T) - TOP path not found" >> ${LOGFOLDER}/top-${DATE}.log
+fi
+
+# PS output with full lines and tree
+if [[ -f ${PS} ]]
+then
+	echo "" >> ${LOGFOLDER}/ps-${DATE}.log
+	echo "${TSTAMP}" >> ${LOGFOLDER}/ps-${DATE}.log
+	${PS} auxfwww >> ${LOGFOLDER}/ps-${DATE}.log
+else
+	echo "$(date +%T) - PS path not found" >> ${LOGFOLDER}/ps-${DATE}.log
+fi
+
+# Netstat output for active connections
+if [[ -f ${NSTAT} ]]
+then
+	echo "" >> ${LOGFOLDER}/netstat-${DATE}.log
+	echo "${TSTAMP}" >> ${LOGFOLDER}/netstat-${DATE}.log
+	${NSTAT} -lanp >> ${LOGFOLDER}/netstat-${DATE}.log
+else
+	echo "$(date +%T) - NETSTAT path not found" >> ${LOGFOLDER}/netstat-${DATE}.log
+fi
+
+# Uptime output for quick view of load as frequency
+if [[ -f ${UTIME} ]]
+then
+	${UTIME} >> ${LOGFOLDER}/uptime-${DATE}.log
+else
+	echo "$(date +%T) - UPTIME path not found" >> ${LOGFOLDER}/uptime-${DATE}.log
+fi

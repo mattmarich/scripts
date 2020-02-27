@@ -1,0 +1,89 @@
+#!/bin/bash
+
+clear
+while [  0 -lt 1 ]; do
+
+        filename='/tmp/dr-proc-check'
+        spacing=' \t \t \t \t \t \t \t \t'
+
+        mysqlpid=0;mysql_cpu=0;mysql_ram=0
+        mongodpid=0;mongod_cpu=0;mongod_ram=0
+        db_cpu=0;db_ram=0
+        mysqlpid=`ps aux | grep mysqld | grep -v grep | awk {'print $2'}`
+        mongodpid=`ps aux | grep '/bin/mongod' | grep -v grep | awk {'print $2'}`
+
+        if [ $mysqlpid -ne 0 ]
+        then
+                mysql_cpu=`ps -p $mysqlpid -o %cpu -h`
+                mysql_ram=`ps -p $mysqlpid -o %mem -h`
+        fi
+        if [ $mongodpid -ne 0 ]
+        then
+                mongod_cpu=`ps -p $mongodpid -o %cpu -h`
+                mongod_ram=`ps -p $mongodpid -o %mem -h`
+        fi
+        db_cpu=`echo $mysql_cpu + $mongod_cpu | bc`
+        db_ram=`echo $mysql_ram + $mongod_ram | bc`
+
+        echo -e "\n$spacing \t                \e[1mDatabase Resources\e[0m\n" > $filename
+        echo -e "$spacing\e[2mPID\t   PROCESS\t   CPU\t   RAM\e[0m" >> $filename
+        if [ $mysqlpid -ne 0 ]; then echo -e "$spacing$mysqlpid\tmysql\t$mysql_cpu%\t$mysql_ram%" >> $filename; fi
+        if [ $mongodpid -ne 0 ]; then echo -e "$spacing$mongodpid\tmongo\t$mongod_cpu%\t$mongod_ram%" >> $filename; fi
+        echo -e "\n$spacing,TOTAL\t \t$db_cpu%\t$db_ram%" >> $filename
+
+        echo -e "\n$spacing \t                 \e[1mCustomer Platforms\e[0m\n" >> $filename
+        echo -e "$spacing\e[2mPID\t   DIRECTORY\t   CPU\t   RAM\e[0m" >> $filename
+
+        for i in `ps aux | grep java | grep '<SOMETHING SPECIFIC TO PLATFORM DAEMON LAUNCH COMMAND>' | awk {'print $2'}`
+        do
+                task=$i
+                cpu=`ps -p $i -o %cpu -h`
+                ram=`ps -p $i -o %mem -h`
+                directory=`lsof -p $i | grep 'DIR' | grep '<DIRECTORY GOES HERE>' | awk {'print $NF'}`
+                echo -e "$spacing$task\t$directory\t$cpu%\t$ram%" >> $filename
+                pids="$pids $task"
+        done
+
+        processing_cpu=`ps -o %cpu p $pids | awk 'NR>1' | xargs | sed -e 's/ /+/g' | bc`
+        processing_ram=`ps -o %mem p $pids | awk 'NR>1' | xargs | sed -e 's/ /+/g' | bc`
+
+        echo -e "\n$spacing,TOTAL\t \t$processing_cpu%\t$processing_ram%" >> $filename
+
+        echo -e "\n$spacing \t                  \e[1mData Processing\e[0m\n" >> $filename
+        echo -e "$spacing\e[2mPID\t   DIRECTORY\t   CPU\t   RAM\e[0m" >> $filename
+
+        for i in `ps aux | grep java | grep '<SOMETHING SPECIFIC TO STACK DAEMON/SCRIPTS>' | awk {'print $2'}`
+        do
+                task=$i
+                cpu=`ps -p $i -o %cpu -h`
+                ram=`ps -p $i -o %mem -h`
+                directory=`lsof -p $i | grep 'DIR' | grep '/data' | awk {'print $NF'}`
+                echo -e "$spacing$task\t$directory\t$cpu%\t$ram%" >> $filename
+                pids1="$pids1 $task"
+        done
+
+        processing_cpu1=`ps -o %cpu p $pids1 | awk 'NR>1' | xargs | sed -e 's/ /+/g' | bc`
+        processing_ram1=`ps -o %mem p $pids1 | awk 'NR>1' | xargs | sed -e 's/ /+/g' | bc`
+
+        total_cpu=`echo $mysql_cpu+$mongod_cpu+$processing_cpu+$processing_cpu1 | bc`
+        total_ram=`echo $mysql_ram+$mongod_ram+$processing_ram+$processing_ram1 | bc`
+
+        echo -e "\n$spacing,TOTAL\t \t$processing_cpu1%\t$processing_ram1%" >> $filename
+
+        echo -e "\n\n$spacing \tTOTAL USE OF <CLIENT> STACK\t$total_cpu%\t$total_ram%" >> $filename
+
+        system_cpu=`grep -e 'processor' /proc/cpuinfo | wc -l`
+        meminfo=`grep MemTotal /proc/meminfo | awk {'print $2'}`
+        system_ram=`echo $meminfo/1024/1024 | bc`
+
+        echo -e "$spacing \tSYSTEM SPECS\t$system_cpu CPUs\t$system_ram GB RAM" >> $filename
+
+        clear
+        cat $filename | column -s ';',' ' -et
+        echo -e "\t\t\t\tLOAD AVG\t\t\t\t`cat /proc/loadavg | awk {'print "   "$1"   "$2"   "$3'}`\n\n"
+        iostat -x | grep -E 'Device|vda' | sed 's/Device: /Disk I\/O/g'
+
+        sleep 3
+done
+
+exit 0

@@ -1,0 +1,72 @@
+#!/bin/bash
+
+paypal_key=<get_this_from_paypal_dev>
+
+client_email=$1
+work_performed=$2
+hours_worked=$3
+hourly_rate=$4
+
+curl -s https://api.paypal.com/v1/oauth2/token \
+  -H "Accept: application/json" \
+  -H "Accept-Language: en_US" \
+  -u "$paypal_key" \
+  -d "grant_type=client_credentials" > /tmp/paypal_token
+
+access_token=`cat /tmp/paypal_token | sed -e 's/\,/\'$'\n/g' | grep 'access_token' | cut -d ':' -f 2 | tr -d '"'`
+
+if [[ -z $client_email || -z $work_performed || -z $hours_worked || -z $hourly_rate ]]
+then
+	client_email="<email_goes_here>"
+	echo "Client Email Address:"
+	read client_email
+	echo "What Performed:"
+	read work_performed
+	echo "Hours Worked:"
+	read hours_worked
+	echo "Hourly Rate:"
+	read hourly_rate
+
+	echo -e "Received your input, creating invoice draft in Paypal\nMAKE SURE TO ACTUALLY SEND OUT IF YOU WANT PAID!"
+else
+	echo -e "Received your input, creating invoice draft in Paypal\nMAKE SURE TO ACTUALLY SEND OUT IF YOU WANT PAID!"
+fi
+
+curl -s -X POST https://api.paypal.com/v1/invoicing/invoices/ \
+-H "Content-Type:application/json" \
+-H "Authorization: Bearer $access_token" \
+-d '{
+  "merchant_info": {
+    "email": "<email_address>",
+    "first_name": "<your_first_name>",
+    "last_name": "<your_last_name>",
+    "phone": {
+      "country_code": "001",
+      "national_number": "<your_phone_number>"
+    },
+    "address": {
+      "line1": "<street_address>",
+      "city": "<city>",
+      "state": "<state>",
+      "postal_code": "<your_zip>",
+      "country_code": "<country_code>"
+    }
+  },
+  "billing_info": [
+    {
+      "email": "'$client_email'"
+    }
+  ],
+  "items": [
+    {
+      "name": "'"$work_performed"'",
+      "quantity": '$hours_worked',
+      "unit_price": {
+        "currency": "USD",
+        "value": "'$hourly_rate'"
+      }
+    }
+  ]
+}' > /dev/null
+
+cat /dev/null > /tmp/paypal_token

@@ -1,0 +1,165 @@
+#!/bin/bash
+
+cd /usr/src
+clamavURI=`curl -s https://www.clamav.net/download | grep '.tar.gz' | grep -v 'sig' | sed 's/\"/\n/g' | grep '/download' | uniq`
+wget https://www.clamav.net/$clamavURI
+tar zxvf ./clamav-*
+cd clamav-*
+apt-get install ncurses-dev libbz2-dev libcurl3-openssl-dev
+mkdir /var/clamav
+./configure -q --enable-bzip2 --prefix=/var/clamav --exec-prefix=/var/clamav --with-libncurses-prefix --with-libcurl=/usr --with-pcre
+make && make install
+
+sed -i 's/DAEMON\=\/usr\/bin\/freshclam/DAEMON\=\/var\/clamav\/bin\/freshclam/' /etc/init.d/clamav-freshclam
+cp /var/clamav/etc/freshclam.conf.sample /var/clamav/etc/freshclam.conf
+echo -e "DatabaseCustomURL http://matthewmarich.com/release/clamav/m2dev.hdb\nDatabaseCustomURL http://matthewmarich.com/release/clamav/m2dev.ndb" >> /var/clamav/etc/freshclam.conf
+sed -i 's/Example config/Config/' /var/clamav/etc/freshclam.conf
+sed -i 's/Example//' /var/clamav/etc/freshclam.conf
+sed -i 's/#UpdateLogFile \/var\/log\/freshclam\.log/UpdateLogFile \/var\/log\/clamav\/freshclam\.log/' /var/clamav/etc/freshclam.conf
+mkdir /var/clamav/share/clamav /var/log/clamav
+chown -R clamav. /var/clamav /var/log/clamav
+
+cd ..
+wget http://www.rfxn.com/downloads/maldetect-current.tar.gz
+tar zxvf ./maldetect-current.tar.gz
+cd maldetect-*
+sed -i 's/inspath\=\/usr\/local\/maldetect/inspath\=\/var\/maldetect/' ./install.sh
+./install.sh
+cd /var/maldetect
+
+sed -i 's/inspath\=\/usr\/local\/maldetect/inspath\=\/var\/maldetect/' ./internals/internals.conf 
+sed -i 's/inspath\='\''\/usr\/local\/maldetect'\''/inspath\=\/var\/maldetect/' ./service/maldet.sh ./maldet ./hookscan.sh /etc/cron.daily/maldet
+
+sed -i 's/email_alert=\"0\"/email_alert=\"1\"/' conf.maldet
+sed -i 's/email_addr\=\"you\@domain\.com\"/email_addr\=\"<YOUR EMAIL HERE>\"/' conf.maldet
+sed -i 's/quarantine_hits\=\"0\"/quarantine_hits\=\"1\"/' conf.maldet
+sed -i 's/quarantine_clean\=\"0\"/quarantine_clean\=\"1\"/' conf.maldet
+
+sed -i 's/\/usr\/local\/maldetect/\/var\/maldetect/' /etc/cron.daily/maldet
+
+apt-get install apache2-prefork-dev libxml2-dev modsecurity-crs
+
+cd /usr/src
+modsecURL=`curl -s https://www.modsecurity.org/download.html | grep 'ModSecurity for Apache' | grep 'href' | sed 's/"/\n/g' | grep tar`
+wget $modsecURL
+tar zxvf ./modsecurity-*
+cd ./modsecurity-*
+./configure -q --prefix=/var/modsecurity --exec-prefix=/var/modsecurity --with-curl=/usr
+make && make install
+
+cp /var/modsecurity/lib/mod_security2.so /usr/lib/apache2/modules/
+echo 'LoadModule security2_module /usr/lib/apache2/modules/mod_security2.so' > /etc/apache2/mods-available/security2.load
+a2enmod security2
+
+cat << EOF > /etc/apache2/conf-available/modsecurity.conf
+SecRuleEngine On
+SecRequestBodyAccess On
+SecResponseBodyAccess On
+SecResponseBodyMimeType (null) text/plain
+SecResponseBodyLimit 1073741824
+##Protects against DDOS Loophole of high RequestBodyLimit
+SecRequestBodyNoFilesLimit 1073741824
+SecRequestBodyLimit 1073741824
+SecRequestBodyInMemoryLimit 1073741824
+SecServerSignature Apache
+SecComponentSignature 200911012341
+SecUploadKeepFiles On
+SecAuditEngine RelevantOnly
+SecAuditLogRelevantStatus "^(?:5|4(?!(04|03|16)))"
+SecArgumentSeparator "&"
+SecAuditLogType Concurrent
+SecAuditLog /var/log/apache2/modsec_audit.log
+SecAuditLogParts ABCEFHIKZ
+SecArgumentSeparator "&"
+SecCookieFormat 0
+SecUploadDir /etc/apache2/modsec_tmp/data/suspicious
+SecDataDir /etc/apache2/modsec_tmp/data/msa
+SecTmpDir /etc/apache2/modsec_tmp/data/tmp
+SecAuditLogStorageDir /etc/apache2/modsec_tmp/data/audit
+SecResponseBodyLimitAction ProcessPartial
+SecRule FILES_TMPNAMES "@inspectFile /var/modsecurity/sbin/modsec-clamscan.pl" "log,deny,status:406,phase:2,t:none,id:'950115'"
+SecPcreMatchLimit 100000
+SecPcreMatchLimitRecursion 100000
+SecRule RESPONSE_STATUS "!^(?:30[12]|[45]\d\d)$" "phase:3,pass,nolog,initcol:resource=%{REQUEST_FILENAME},id:'99999995'"
+SecAction phase:1,nolog,pass,initcol:ip=%{REMOTE_ADDR},initcol:user=%{REMOTE_ADDR},id:'99999996'
+SecDefaultAction phase:2,deny,status:406,log,auditlog
+
+<Location ~ "/(wp-login.php|wp-admin/)">
+	# Setup brute force detection.
+	ErrorDocument 406 "Error 406...IP block temporarily for too many failed logins"
+	# React if block flag has been set.
+	SecRule IP:bf_block "@gt 0" "phase:2,deny,status:406,log,msg:'ip address blocked for 5 minutes, more than 5 login attempts in 10 minutes.',id:'99999997'"
+	# Setup Tracking.  On a successful login, a 302 redirect is performed, a 200 indicates login failed.
+	SecRule REQUEST_METHOD "@streq POST" "phase:5,chain,t:none,nolog,pass,id:'99999998'"
+	SecRule RESPONSE_STATUS "^200" "setvar:IP.bf_counter=+1,deprecatevar:IP.bf_counter=1/600"
+	SecRule IP:bf_counter "@ge 5" "t:none,setvar:IP.bf_block=1,expirevar:IP.bf_block=300,setvar:IP.bf_counter=0,id:'99999999'"
+</Location>
+
+Include /usr/share/modsecurity-crs/activated_rules/*.conf
+EOF
+
+mkdir -p /etc/apache2/modsec_tmp/data/suspicious /etc/apache2/modsec_tmp/data/msa /etc/apache2/modsec_tmp/data/tmp /etc/apache2/modsec_tmp/data/audit /var/modsecurity/sbin
+chown -R www-data. /etc/apache2/modsec_tmp/
+
+a2enconf modsecurity
+
+cat << EOF > /var/modsecurity/sbin/modsec-clamscan.pl
+#!/usr/bin/perl
+#
+# modsec-clamscan.pl
+# ModSecurity for Apache (http://www.modsecurity.org)
+# Copyright (c) 2002-2007 Breach Security, Inc. (http://www.breach.com)
+#
+# This script is an interface between mod_security and its
+# ability to intercept files being uploaded through the
+# web server, and ClamAV
+
+# by default use the command-line version of ClamAV,
+# which is slower but more likely to work out of the
+# box
+$CLAMSCAN = "/var/clamav/bin/clamscan";
+
+# using ClamAV in daemon mode is faster since the
+# anti-virus engine is already running, but you also
+# need to configure file permissions to allow ClamAV,
+# usually running as a user other than the one Apache
+# is running as, to access the files
+# $CLAMSCAN = "/usr/bin/clamdscan";
+
+if (@ARGV != 1) {
+    print "Usage: modsec-clamscan.pl <filename>\n";
+    exit;
+}
+
+my ($FILE) = @ARGV;
+
+$cmd = "$CLAMSCAN --stdout --disable-summary $FILE";
+$input = `$cmd`;
+$input =~ m/^(.+)/;
+$error_message = $1;
+
+$output = "0 Unable to parse clamscan output [$1]";
+
+if ($error_message =~ m/: Empty file\.?$/) {
+    $output = "1 empty file";
+}
+elsif ($error_message =~ m/: (.+) ERROR$/) {
+    $output = "0 clamscan: $1";
+}
+elsif ($error_message =~ m/: (.+) FOUND$/) {
+    $output = "0 clamscan: $1";
+}
+elsif ($error_message =~ m/: OK$/) {
+    $output = "1 clamscan: OK";
+}
+
+print "$output\n";
+EOF
+
+cd /usr/share/modsecurity-crs/activated_rules/
+ln -s /usr/share/modsecurity-crs/base_rules/modsecurity_crs_40_generic_attacks.conf .
+ln -s /usr/share/modsecurity-crs/base_rules/modsecurity_40_generic_attacks.data .
+ln -s /usr/share/modsecurity-crs/optional_rules/modsecurity_crs_42_comment_spam.conf .
+ln -s /usr/share/modsecurity-crs/optional_rules/modsecurity_42_comment_spam.data .
+
+service apache2 restart

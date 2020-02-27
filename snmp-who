@@ -1,0 +1,10 @@
+#!/bin/bash
+w | tail -n +3 | awk {'print "user: "$1"  ip: "$3"  login: "$4,$NF'} | while read line
+do
+        if [[ "$line" == *"[priv]" ]]
+        then
+                echo $line | awk {'print $1,$2,$3,$4,$5,$6,"- sudo\047d as root"'}
+        else
+                echo $line | awk {'print $1,$2,$3,$4,$5,$6'}
+        fi
+done

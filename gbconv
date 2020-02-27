@@ -1,0 +1,8 @@
+#!/bin/bash
+numToConv=`echo $1 | cut -d 'G' -f 1`
+inMBytes=`echo "$numToConv * 1024" | bc`
+inKBytes=`echo "$numToConv * 1024 * 1024" | bc`
+inBytes=`echo "$numToConv * 1024 * 1024 * 1024" | bc`
+echo -e "MegaBytes:\t$inMBytes"
+echo -e "KiloBytes:\t$inKBytes"
+echo -e "Bytes:\t\t$inBytes"

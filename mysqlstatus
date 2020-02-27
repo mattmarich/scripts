@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ -z $1 ]
+then
+  echo "Please enter mysql root user password: "
+  read mysqlpass
+else
+  mysqlpass=$1
+fi
+
+export MYSQL_PWD=$mysqlpass
+
+while [ 2 -gt 1 ];
+do
+        clear
+        mysqladmin -u root proc status
+        sleep 2
+done
