@@ -58,3 +58,8 @@ WnHsV8J4-GdEDM5v
 2d6Qt-b6NVwbnB3P
 ZpXbv1rnpkfpr9gO
 ```
+
+Getpass
+=======
+
+Getpass is a simple script that uses Hashicorp's Vault, when store path is completed it retrieves the keyvalue and copies it to clipboard on Mac (perfect for when you need to login to a service during a meeting broadcast)
