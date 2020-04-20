@@ -1,0 +1,3 @@
+#!/bin/bash
+# Simple script that grabs passworf from keyvalue store in Hashicorp Vault, copies to to clipboard on Mac... Great for when you're in a meeting and you don't want your password exposed
+/usr/local/bin/vault kv get mmarich/passwords/$1 | tail -1 | awk {'print $NF'} | pbcopy
